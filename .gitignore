@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# STEP は容量が大きいので除外 (webcamera_holder.py を実行すれば再生成できる)
+output/*.step

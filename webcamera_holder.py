@@ -57,6 +57,10 @@ CONN_FROM_EDGE = 6.0     # 基板上辺 (+Y 端) からコネクタ中心まで�
 CONN_W = 10.5            # コネクタ (プラグ込み) X 方向寸法
 CONN_D = 5.0             # コネクタ (プラグ込み) Y 方向寸法
 CONN_CLR = 1.0           # 切り欠きの片側余裕
+# 裏蓋のケーブル切り欠き。ELP (コネクタ中央) と ArduCam UC-844 (横向きコネクタが前面から見て
+# 右寄り X=+1..+9 付近、配線が基板に沿って出る) の両方に使えるよう左右対称に広げる
+NOTCH_W = 24.0           # 切り欠き幅 (X)。押さえ柱 (X=±17) とその根元を残せる上限付近
+NOTCH_FROM_EDGE = 12.0   # 基板上辺から切り欠き下端までの距離
 CABLE_WALL_SLOT = True   # 上壁にもケーブル用スリットを入れる (上方向にも逃がせる)
 CABLE_SLOT_W = 5.0       # 上壁スリット幅 (ケーブル径 + 余裕)
 CABLE_SLOT_D = 6.0       # 上壁スリット深さ (背面端から)
@@ -146,6 +150,21 @@ PLATE_SIDE = 1           # 張り出す向き (+1: 前面から見て右、-1: �
 PAD_PLATE_V0 = LEG_H - PIVOT_Z + 0.4   # パッド側プレートの前端 (脚の背面 5.6 より後ろ) = 6.0
 ARM_PLATE_U0 = -9.0      # アーム側プレートの上端 (俯角 35° まで脚が当たらない)
 WEB_X0 = LEG_GAP / 2 + LEG_T + 1.0   # 脚の外側面 7.5 + 1.0。ここから外側は L の角まで板を繋ぐ
+
+# --- 卓上スタンド (机に置く台座。mount の代わりに使う) ---
+#   ピボットボスから柱を下ろし、平らなベース板で机に立てる。ベース板を下にして印刷 (サポート不要)。
+MOUNT_STYLE = "desk"     # 3MF に入れる台座: "desk" (卓上スタンド) / "monitor" (L 形マウント)
+DESK_TILT_DEG = -10.0    # 卓上での俯角 (+ で下向き、- で上向き)。D 穴の向きで固定
+STAND_H = 30.0           # 机面 -> ピボット中心の高さ。レンズ中心は 机面 + STAND_H + 約 30
+POST_W = 9.0             # 柱の前後幅 (Z)
+BASE_W = 56.0            # ベース板の幅 (X)
+BASE_FRONT = 28.0        # ピボット -> ベース前端 (レンズ側, -Z)
+BASE_BACK = 38.0         # ピボット -> ベース後端 (ケーブル側, +Z)。重心とケーブルの引きに備えて後ろを長く
+BASE_T = 4.0             # ベース板厚
+BASE_R = 6.0             # ベース板の角 R
+RIB_T = 4.0              # リブ厚
+RIB_TOP = -11.0          # リブ上端 (ピボット基準)。脚の可動範囲 (半径約 8.5) より下
+RIB_REACH = 18.0         # リブの張り出し (柱中心から)
 
 # --- ヒンジピン (D 形断面) ---
 PIN_SIZES = (3.9, 4.0, 4.1)   # 軸径の候補。頭の点の数 1,2,3 で区別 (4.0 が実績値)
@@ -287,8 +306,9 @@ def build_housing() -> Part:
 # 2. 裏蓋 cover (本体座標で作成: 板は Z=DEPTH..DEPTH+COVER_T、リップは本体内へ。印刷用に後で裏返す)
 # ---------------------------------------------------------------------------
 def build_cover() -> Part:
-    notch_w = CONN_W + 2 * CONN_CLR
-    notch_y0 = BOARD / 2 - CONN_FROM_EDGE - CONN_D / 2 - CONN_CLR
+    notch_w = max(NOTCH_W, CONN_W + 2 * CONN_CLR)
+    notch_y0 = min(BOARD / 2 - NOTCH_FROM_EDGE,
+                   BOARD / 2 - CONN_FROM_EDGE - CONN_D / 2 - CONN_CLR)
     with BuildPart() as cp:
         # 板
         Box(OUTER, OUTER, COVER_T, align=(Align.CENTER, Align.CENTER, Align.MIN))
@@ -313,7 +333,7 @@ def build_cover() -> Part:
                 Polygon(*pts, align=None)
             extrude(amount=SNAP_LEN / 2, both=True)
         # ケーブル切り欠き (コネクタ直上から上端まで)
-        with Locations((CONN_X, (notch_y0 + OUTER / 2 + 1) / 2, 0)):
+        with Locations((0.0, (notch_y0 + OUTER / 2 + 1) / 2, 0)):
             Box(notch_w, OUTER / 2 + 1 - notch_y0, 20, mode=Mode.SUBTRACT)
         # 基板押さえの柱 (板の内面 Z=0 から基板裏面まで + 押し込み量)
         if BOARD_PRESS:
@@ -396,6 +416,49 @@ def build_mount() -> Part:
 
 
 # ---------------------------------------------------------------------------
+# 3b. 卓上スタンド stand (housing 座標系の組み立て位置。DESK_TILT_DEG だけ本体が傾く)
+# ---------------------------------------------------------------------------
+def build_stand_local() -> Part:
+    """ピボット中心を原点、机に対して水平な座標 (Y = 上, Z = 後ろ) で作ったスタンド。"""
+    base_top = -STAND_H + BASE_T
+    with BuildPart() as sp:
+        # 柱 + ピボットボス (X 厚 MOUNT_T、脚の間に入る)
+        with BuildSketch(Plane.YZ):          # ローカル x = Y, y = Z
+            Circle(MOUNT_BOSS_R)
+            with Locations(((base_top - 0.0) / 2 - 0.5, 0)):
+                Rectangle(-base_top + 1.0, POST_W)
+        extrude(amount=MOUNT_T / 2, both=True)
+        # ベース板 (机に接する面 Y = -STAND_H)
+        with BuildSketch(Plane.XZ.offset(STAND_H)):   # 法線 -Y、原点 Y = -STAND_H
+            with Locations((0, (BASE_BACK - BASE_FRONT) / 2)):   # ローカル y = +Z
+                RectangleRounded(BASE_W, BASE_FRONT + BASE_BACK, BASE_R)
+        extrude(amount=-BASE_T)                       # +Y 側へ
+        # リブ (柱の左右と前後。脚が回る範囲より下だけ)
+        h = RIB_TOP - base_top
+        for sx in (-1, 1):                            # 左右リブ (X-Y 面の三角形)
+            with BuildSketch(Plane.XY):
+                Polygon((sx * MOUNT_T / 2 - sx * 0.5, RIB_TOP), (sx * MOUNT_T / 2 - sx * 0.5, base_top - 0.5),
+                        (sx * RIB_REACH, base_top - 0.5), align=None)
+            extrude(amount=RIB_T / 2, both=True)
+        for sz in (-1, 1):                            # 前後リブ (Y-Z 面の三角形)
+            with BuildSketch(Plane.YZ):
+                Polygon((RIB_TOP, sz * (POST_W / 2 - 0.5)), (base_top - 0.5, sz * (POST_W / 2 - 0.5)),
+                        (base_top - 0.5, sz * RIB_REACH), align=None)
+            extrude(amount=MOUNT_T / 2, both=True)
+    return sp.part
+
+
+def build_stand() -> Part:
+    part = build_stand_local().rotate(Axis.X, DESK_TILT_DEG).moved(Location((0, PIVOT_Y, PIVOT_Z)))
+    with BuildPart() as sp2:
+        add(part)
+        with BuildSketch(Plane.YZ.offset(-BASE_W)):
+            d_profile(MOUNT_HOLE_D / 2, HOLE_FLAT_FROM_AXIS, (PIVOT_Y, PIVOT_Z))
+        extrude(amount=2 * BASE_W, mode=Mode.SUBTRACT)
+    return sp2.part
+
+
+# ---------------------------------------------------------------------------
 # 4. ヒンジピン pin (軸 = X 方向、寝かせた印刷向きで作成。底面の平面が D の直線部)
 # ---------------------------------------------------------------------------
 def build_pin(d: float, marks: int) -> Part:
@@ -428,6 +491,7 @@ def build_pin(d: float, marks: int) -> Part:
 housing = build_housing()
 cover = build_cover()
 mount = build_mount()
+stand = build_stand()
 pins = [(d, build_pin(d, i + 1)) for i, d in enumerate(PIN_SIZES)]
 
 # 印刷向きの部品 (housing はそのまま、cover は裏返して Z=0 に、mount は寝かせる)
@@ -435,6 +499,10 @@ housing_print = housing
 cover_print = cover.rotate(Axis.Y, 180).moved(Location((0, 0, DEPTH + COVER_T)))
 # mount はバーと面一の側 (プレートが張り出していない側) を下にして寝かせる
 mount_print = place(mount.rotate(Axis.Y, -90 * PLATE_SIDE), 0, 0)
+# stand は机に置く姿勢に戻し (傾きを解除)、ベース板の底面 (-Y) を下にする
+stand_print = place(stand.moved(Location((0, -PIVOT_Y, -PIVOT_Z))).rotate(Axis.X, -DESK_TILT_DEG)
+                    .rotate(Axis.X, 90), 0, 0)
+base_print = stand_print if MOUNT_STYLE == "desk" else mount_print
 
 if __name__ == "__main__":
     OUT_DIR.mkdir(exist_ok=True)
@@ -444,6 +512,8 @@ if __name__ == "__main__":
     export_step(housing_print, str(OUT_DIR / "housing.step"))
     export_step(cover_print, str(OUT_DIR / "cover.step"))
     export_step(mount_print, str(OUT_DIR / "mount.step"))
+    export_stl(stand_print, str(OUT_DIR / "stand.stl"))
+    export_step(stand_print, str(OUT_DIR / "stand.step"))
     for d, pin in pins:
         export_stl(pin, str(OUT_DIR / f"pin_{d:.1f}.stl"))
     # 全部品を並べた 3MF (Bambu Studio にそのまま読み込める)
@@ -452,7 +522,7 @@ if __name__ == "__main__":
     m.add_shape([
         place(housing_print, -35, 10),
         place(cover_print, 25, 10),
-        place(mount_print, 25, -40),
+        place(base_print, 25, -45),
     ] + pin_row, part_number="webcamera_holder")
     m.write(str(OUT_DIR / "webcamera_holder.3mf"))
     # 再印刷用: 裏蓋 + ピンだけの 3MF
@@ -468,9 +538,9 @@ if __name__ == "__main__":
             show(
                 housing_print,
                 cover_print.moved(Location((60, 10, 0))),
-                mount_print.moved(Location((60, -45, 0))),
+                base_print.moved(Location((60, -45, 0))),
                 *[pin.moved(Location((100, -45 + 12 * i, 0))) for i, (_, pin) in enumerate(pins)],
-                names=["housing", "cover", "mount"] + [f"pin_{d:.1f}" for d, _ in pins],
+                names=["housing", "cover", MOUNT_STYLE] + [f"pin_{d:.1f}" for d, _ in pins],
                 colors=["lightblue", "gray", "dimgray"] + ["orange"] * len(pins),
             )
         except Exception as e:  # viewer 未起動など

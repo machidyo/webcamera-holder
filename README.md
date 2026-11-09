@@ -10,8 +10,9 @@ ELP USB4KHDR01 (38.17 x 38.17 mm 基板) 用の Web カメラホルダです。
 | 部品 | ファイル | 説明 |
 |---|---|---|
 | housing | `output/housing.stl` | 本体。前面レンズ開口、基板用ボス 4 本、縦スロットの通気穴、ヒンジ脚 (D 穴) |
-| cover | `output/cover.stl` | 裏蓋。スナップ嵌合。コネクタ直上にケーブル切り欠き、基板を押さえる柱 4 本 |
+| cover | `output/cover.stl` | 裏蓋。スナップ嵌合。上辺に幅 24 mm のケーブル切り欠き (コネクタ中央の ELP と右寄りの ArduCam UC-844 の両方に対応)、基板を押さえる柱 4 本 |
 | mount | `output/mount.stl` | L 形ブラケット。上面パッド + 前面アーム、アームにピボットボス (D 穴)。外側 2 面にテープ貼り付け用プレート (26 x 2 mm) |
+| stand | `output/stand.stl` | 卓上スタンド (mount の代わり)。柱 + ピボットボス (D 穴) + ベース板 56 x 66 mm。ベース板を下にして印刷。`MOUNT_STYLE` で 3MF に入れる台座を切り替え |
 | pin | `output/pin_3.9.stl` / `pin_4.0.stl` / `pin_4.1.stl` | D 形断面のヒンジピン。軸径違いを 3 本印刷し、きつく入るものを使う (頭の点の数で区別、4.0 が実績値) |
 
 `output/webcamera_holder.3mf` に全部品を印刷向きで並べてあります。Bambu Studio にそのまま読み込めます。
